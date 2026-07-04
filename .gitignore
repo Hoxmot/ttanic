@@ -1,0 +1,9 @@
+# binaries
+/ttanic
+dist/
+
+# test artifacts
+cover.out
+
+# macOS
+.DS_Store

@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - revive
+  settings:
+    govet:
+      enable:
+        # flag unkeyed fields in composite literals of imported struct types
+        - composites

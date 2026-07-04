@@ -4,7 +4,7 @@
 
 ## Project status
 
-Design phase — no code yet (update this line as milestones land). The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
+M1 in progress — repository scaffolded (M1.1), no functionality yet (update this line as milestones land). The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
 
 ## Workflow
 
