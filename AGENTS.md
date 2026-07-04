@@ -4,7 +4,17 @@
 
 ## Project status
 
-Design phase — no code yet. The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
+Design phase — no code yet (update this line as milestones land). The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
+
+## Workflow
+
+Implementation is tracked in GitHub issues #1–#52 (`gh issue list`), grouped into milestones M1–M4 mirroring the LLD. Issue number = task ID: task M1.13 is issue #13. Each issue body has Context / Needs / Scope / Done when.
+
+- **Pick up an issue**: read its body plus the LLD sections it references. **Needs** lists blocking task IDs — do not start an issue whose dependencies aren't merged.
+- **Branch + PR per issue**: branch from `main` named like `m1-1-scaffold`; the PR body must contain `Closes #<n>` and note any judgment calls. Never commit or push to `main` directly; the user reviews and merges.
+- **Gate**: `just ci` must pass locally before the PR and in CI (until issue #1 lands the justfile, `go build ./... && go test ./...` is the stand-in).
+- **Scope**: implement what the issue's Done-when requires — no drive-by refactors; spotted problems become new issues (`gh issue create`).
+- **Deviations**: if implementation forces a change to the HLD/LLD, update the doc in the same PR and call it out in the PR description. Docs and code must never silently disagree.
 
 ## Tech stack
 
