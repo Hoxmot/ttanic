@@ -1,5 +1,3 @@
-# ttanic task runner -- dev-time only, never needed by end users.
-
 export CGO_ENABLED := "0"
 
 # list available recipes

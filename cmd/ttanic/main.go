@@ -1,5 +1,4 @@
-// Command ttanic manages archive folders: compressing, decompressing, and
-// browsing directories as .tar.zst archives.
+// Command ttanic manages archive folders as .tar.zst archives.
 package main
 
 import "fmt"
