@@ -7,6 +7,15 @@ description: Implement a ttanic GitHub issue end-to-end with the operator in the
 
 Contract with the operator: **plan before code, explicit ack before implementation, operator merges — never you.** Never commit to `main`. `AGENTS.md` rules apply throughout.
 
+**AI attribution**: anything you post to GitHub appears under the operator's account, so every comment (PR comments, issue comments, inline review replies) must state it is AI-generated. Open each one with the following, substituting `<MODEL>` with the model you are running as (e.g. Claude Fable 5):
+
+```
+> [!NOTE]
+> 🤖 Beep bop boop — it's <MODEL>. This comment is AI-generated via [Claude Code](https://claude.com/claude-code); the operator stays at the helm (and the merge button).
+```
+
+(PR bodies carry the `🤖 Generated with [Claude Code](https://claude.com/claude-code)` footer instead, and commits the `Co-Authored-By` trailer, per AGENTS.md.)
+
 Argument: an issue number (e.g. `13`). If none given, ask which issue to work on.
 
 ## 1. Understand
@@ -75,5 +84,5 @@ When asked to address review feedback:
 - Fetch it all: `gh pr view <pr> --comments` plus inline comments via `gh api repos/Hoxmot/ttanic/pulls/<pr>/comments`.
 - Address every comment: either make the change or push back with reasoning — never silently skip one.
 - Commit, run the gate, push to the same branch.
-- Reply on the PR (`gh pr comment`) summarizing what changed for each point; leave thread resolution to the operator.
+- Reply on the PR (`gh pr comment`) summarizing what changed for each point, with the AI-attribution note on top; leave thread resolution to the operator.
 - Repeat until the operator merges.
