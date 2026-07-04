@@ -49,7 +49,7 @@ Present the plan in the conversation. Do **not** commit it and do **not** write 
 - Follow the acked plan; if reality forces a change to it, say so and get a nod before continuing down a different path.
 - Scope discipline: build what Done-when requires, nothing more. Problems you spot along the way become new issues (`gh issue create`), not drive-by fixes.
 - Commit style per AGENTS.md (conventional prefixes). Small, coherent commits.
-- Gate before pushing: `just ci` passes locally (before issue #1 lands the justfile: `go build ./... && go vet ./... && go test ./...`).
+- Gate before pushing: `just ci` passes locally.
 
 ## 5. Pull request
 

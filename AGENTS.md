@@ -14,7 +14,7 @@ The `work-issue` skill (`.claude/skills/work-issue/`) encodes the full flow — 
 
 - **Pick up an issue**: read its body plus the LLD sections it references. **Needs** lists blocking task IDs — do not start an issue whose dependencies aren't merged.
 - **Branch + PR per issue**: branch from `main` named like `m1-1-scaffold`; the PR body must contain `Closes #<n>` and note any judgment calls. Never commit or push to `main` directly; the user reviews and squash-merges (one commit on `main` per issue). When opening or updating a PR, suggest the squash-merge commit message.
-- **Gate**: `just ci` must pass locally before the PR and in CI (until issue #1 lands the justfile, `go build ./... && go test ./...` is the stand-in).
+- **Gate**: `just ci` must pass locally before the PR and in CI.
 - **Scope**: implement what the issue's Done-when requires — no drive-by refactors; spotted problems become new issues (`gh issue create`).
 - **Deviations**: if implementation forces a change to the HLD/LLD, update the doc in the same PR and call it out in the PR description. Docs and code must never silently disagree.
 
