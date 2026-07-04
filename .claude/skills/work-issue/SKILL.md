@@ -75,7 +75,7 @@ Closes #<n>
 <what just ci covers for this change; any manual verification performed>
 ```
 
-Report the PR URL to the operator. Do not merge.
+Report the PR URL to the operator, along with a suggested squash-merge message (see "Merging"). Do not merge.
 
 ## 6. Review loop
 
@@ -85,4 +85,22 @@ When asked to address review feedback:
 - Address every comment: either make the change or push back with reasoning — never silently skip one.
 - Commit, run the gate, push to the same branch.
 - Reply on the PR (`gh pr comment`) summarizing what changed for each point, with the AI-attribution note on top; leave thread resolution to the operator.
+- Re-suggest the squash-merge message in the conversation, updated to cover the branch's new state (see "Merging").
 - Repeat until the operator merges.
+
+## Merging
+
+PRs are **squash-and-merged**: one commit on `main` per issue, so `git log --oneline` reads as the list of landed tasks. Every time you open the PR or push to it, suggest the squash-merge message to the operator in the conversation, shaped like:
+
+```
+<type>: <short summary> (M<X>.<Y>) (#<PR>)
+
+<what the change is — describe the branch's final state, not the
+review journey>
+
+Closes #<n>
+
+Co-Authored-By: <model name> <noreply@anthropic.com>
+```
+
+The operator performs the merge — you never do, unless explicitly instructed for a specific PR.
