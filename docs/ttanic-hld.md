@@ -54,7 +54,7 @@ All the TUI features are also available from CLI.
 1. I open the TUI
 2. I navigate to the folder I want to compress with `hjkl` (vim-style navigation) or arrows
 3. I press `i` for decompression (inflate)
-4. The program compresses the directory/file
+4. The program decompresses the directory/file
 
 #### Deleting the directory
 
@@ -86,7 +86,7 @@ All the TUI features are also available from CLI.
 1. I open the TUI
 2. I navigate to the folder I want to compress with `hjkl` (vim-style navigation) or arrows
 3. I press `I` for recursive decompression (inflate)
-4. The program decompresses the all the archives inside the selected directory into separate archives. If the selected thing is a file, it behaves like `i` (single decompression)
+4. The program decompresses all the archives inside the selected directory. If the selected thing is a file, it behaves like `i` (single decompression)
 
 #### Multi selection
 
@@ -104,7 +104,73 @@ All the TUI features are also available from CLI.
 
 I'd like to use `go` programming language with nice TUI made with tools from charm.land: `Bubble Tea`, `Huh`, and `Lip Gloss`.
 
-For compression, I'd like to use (most probably) `zstd`. When I worked with bash, I used `tar`, but if there's library for that, I think it's better than invoking another program -- especially that the program might not be installed on host.
+For archiving and compression: `zstd` compresses a single stream, so directories are first archived with tar, producing `.tar.zst`. Both steps happen in-process with Go libraries (`archive/tar` from the stdlib + `klauspost/compress/zstd`) -- no external binaries required on the host.
 
 Of course, I'd like the program to be easily distributable/installable.
+
+## Design decisions
+
+### Archive format
+
+- ttanic produces exactly one format: `.tar.zst`. Single files and directories both go through tar, so every archive looks the same to the manifest and the decompressor.
+- Reading/creating foreign formats (`.zip`, `.tar.gz`, `.tar.xz`, ...) is out of scope for v1.
+
+### Manifest
+
+The manifest is the differentiating core of ttanic. It guarantees:
+
+- **Browsing**: the file listing (paths, sizes, mtimes) of every archive ttanic creates, so the TUI can expand an archive like a read-only folder without decompressing it.
+- **Integrity**: checksums of archives and their contents, used by verify-then-delete and by `verify`/`scan` to detect corruption.
+- **Search**: fuzzy search (`<SUPER>/`) finds files *inside* archives, not just loose files.
+- **Inventory**: a record of everything archived in the project, enabling "where did I put X" queries.
+
+Storage sits behind a small interface. MVP backend: SQLite via a pure-Go driver (`modernc.org/sqlite`, keeps the build CGo-free). A JSONL backend (slower, but human-readable and diff-able) becomes a config choice later.
+
+**Drift handling**: archives can be moved, deleted, or modified outside ttanic. On TUI startup a quick scan compares existence/size/mtime against the manifest and visibly marks stale entries, offering a fix. `:scan` (TUI) / `ttanic scan` (CLI) does a deep re-verify with checksums. Nothing in the manifest is changed silently.
+
+### Project model
+
+- A project is marked by a `.ttanic/` directory (like `.git/`) holding `config.toml`, the manifest database, and any future state. The project root is the nearest ancestor containing `.ttanic/`.
+- **Standalone mode** (outside a project): all manifest features are disabled. If a manifest is on the critical path of a command (e.g. search inside archives, browse archive contents), the user gets an error that the project isn't initialised. If the manifest part is incidental (e.g. plain compression, which would normally also record to the manifest), the operation runs and the manifest step is skipped with a warning.
+
+### Safety
+
+- **Verify-then-delete**: an original is only deleted after the freshly written archive is re-read and its contents verified against checksums. This applies to compress-and-delete (`:cd`) and to any flow that removes originals.
+- **All deletes confirm**: `d` shows a y/n prompt (default: no) naming the target. The prompt also accepts `d` as confirmation, so `dd` deletes -- matching vim muscle memory while still preventing fat-finger accidents.
+
+### Operation semantics
+
+- **Placement**: compressing `photos/` creates `photos.tar.zst` as a sibling. On collision the user is prompted: overwrite / rename with suffix / abort. The original is kept unless the operation was compress-and-delete.
+- **Recursive compress (`C`)**: covers immediate children only -- each direct child (file or subdirectory) of the selected directory becomes its own archive; subdirectories are archived whole. Already-compressed children are skipped, and ignore patterns are respected.
+- **Jobs**: MVP runs one operation at a time, modal with a progress bar and cancellation. Operations are modeled as messages from the start, so a background job queue can be added later without a rewrite.
+
+### Config
+
+- Global config at `~/.config/ttanic/config.toml`, overridden per-project by `.ttanic/config.toml`.
+- Contents: compression settings (zstd level, worker count), gitignore-style ignore patterns (what recursive compress and scan skip: `.git`, `node_modules`, ...), and UI preferences (theme, hidden files, sorting, prompts).
+- Remappable keybindings are deferred to v2.
+
+### CLI
+
+- Verb subcommands with full TUI feature parity: `ttanic init`, `compress`, `decompress`, `ls <archive>`, `search <query>`, `scan`, `verify`, `delete`. Plain `ttanic` opens the TUI.
+
+### In-archive browsing
+
+- MVP: expanding an archive in the TUI shows a read-only listing (names, sizes, mtimes) served from the manifest. Getting a file out means decompressing the whole archive.
+- Single-file extraction from an archive is planned for MVP+1.
+
+### Distribution
+
+- Tagged releases build cross-platform static binaries with goreleaser, published to GitHub Releases.
+- `go install` works out of the box (public repo, CGo-free build).
+- Homebrew tap (maintained by goreleaser); Nix/AUR/other package managers later.
+
+## Open questions for low-level design
+
+- Checksum algorithm and granularity: fast xxhash vs sha256; per-file, per-archive, or both.
+- Symlink handling (likely tar's default: store the link itself, don't follow).
+- Behavior for nested `.ttanic/` projects (likely: nearest ancestor wins, warn on nesting).
+- Manifest schema versioning and migrations.
+- Partial-failure semantics for recursive compress (continue and report vs abort).
+- Windows support level (paths, config location, terminal behavior).
 
