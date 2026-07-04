@@ -144,11 +144,30 @@ Storage sits behind a small interface. MVP backend: SQLite via a pure-Go driver 
 - **Recursive compress (`C`)**: covers immediate children only -- each direct child (file or subdirectory) of the selected directory becomes its own archive; subdirectories are archived whole. Already-compressed children are skipped, and ignore patterns are respected.
 - **Jobs**: MVP runs one operation at a time, modal with a progress bar and cancellation. Operations are modeled as messages from the start, so a background job queue can be added later without a rewrite.
 
+### File operations (TUI)
+
+The TUI is a file manager, so it includes basic file operations beyond compress/decompress:
+
+- `d` -- delete (already covered above)
+- `y` / `x` / `p` -- copy / cut / paste (vim-style yank register; works with multi-selection)
+- `r` -- rename
+- `e` -- open an uncompressed file in the editor (config `editor`, falling back to `$VISUAL`/`$EDITOR`; the TUI suspends while the editor runs)
+
+When one of these operations touches a manifest-tracked archive, the manifest is updated as part of the operation (rename/move updates the path, paste of a copied archive adds an entry, delete removes it). This is the main reason to do file operations *inside* ttanic instead of in a shell: no drift.
+
+These are TUI-only. The CLI doesn't mirror them (`cp`/`mv`/`rm` already exist in the shell); whether to add e.g. `ttanic mv` later purely for manifest-synced moves stays an open question -- until then, scan-on-open catches drift from shell-side moves.
+
 ### Config
 
 - Global config at `~/.config/ttanic/config.toml`, overridden per-project by `.ttanic/config.toml`.
-- Contents: compression settings (zstd level, worker count), gitignore-style ignore patterns (what recursive compress and scan skip: `.git`, `node_modules`, ...), and UI preferences (theme, hidden files, sorting, prompts).
+- Format is TOML. Rationale: config is hand-edited, and TOML supports comments (documenting settings, keeping commented-out defaults), is typed and unambiguous, and is the de-facto Go/CLI-tool convention. JSON has no comments and is noisy to hand-edit; YAML is error-prone (indentation, implicit typing). JSON remains the right tool where machines exchange data (future `--json` CLI output).
+- Contents: compression settings (zstd level, worker count), gitignore-style ignore patterns (what recursive compress and scan skip: `.git`, `node_modules`, ...), UI preferences (theme name, hidden files, sorting, prompts), and `editor` (empty = fall back to `$VISUAL`, then `$EDITOR`).
 - Remappable keybindings are deferred to v2.
+
+### Themes
+
+- All TUI styling flows through a single `Theme` struct (colors + Lip Gloss styles) resolved once at startup -- no hardcoded styles scattered through views. This makes custom themes cheap to add.
+- MVP ships a built-in default theme. Custom themes come from files: `~/.config/ttanic/themes/<name>.toml`, selected by `theme = "<name>"` in config (post-MVP).
 
 ### CLI
 
@@ -161,9 +180,12 @@ Storage sits behind a small interface. MVP backend: SQLite via a pure-Go driver 
 
 ### Distribution
 
-- Tagged releases build cross-platform static binaries with goreleaser, published to GitHub Releases.
-- `go install` works out of the box (public repo, CGo-free build).
-- Homebrew tap (maintained by goreleaser); Nix/AUR/other package managers later.
+- MVP: tagged releases build cross-platform static binaries with goreleaser, published to GitHub Releases; `go install` works out of the box (public repo, CGo-free build).
+- Post-MVP: Homebrew tap (maintained by goreleaser); Nix/AUR/other package managers later.
+
+### Future considerations (explicitly not designed yet)
+
+- **Plugins**: extensibility is attractive, but the right API surface isn't clear yet (exec-style hooks like git? embedded scripting?). No commitment now; the decisions already made keep the door open -- the core engine is a library separate from the UIs, operations are messages, and the CLI can grow `--json` output for external tooling.
 
 ## Open questions for low-level design
 
