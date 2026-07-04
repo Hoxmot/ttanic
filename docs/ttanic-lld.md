@@ -291,6 +291,10 @@ type Sums struct{ Targets []string; Write bool } // sha256; Write caches into ma
 type Init struct{ Answers InitAnswers }
 ```
 
+Ops are constructed as keyed struct literals -- `engine.Compress{Targets: paths, DeleteOriginal: true}` -- so call sites name every option they set; there are no positional booleans anywhere (`go vet`/revive reject unkeyed literals). The op struct *is* the options object.
+
+**Config vs. op fields**: two kinds of knobs, two paths. Configuration (zstd level, workers, `on_symlink`, ignore patterns) is resolved from the config files once and handed to the engine at construction -- `engine.New(cfg, store)` -- never duplicated onto ops, so there's a single source of truth. Op fields carry only *per-invocation intent*: things the user expressed in this specific command (`--delete`, `C` vs `c`). Litmus test: comes from a file -> `Engine`; comes from a flag or keypress -> op field. An op accumulating more than a couple of bools is the signal to split it into distinct ops or an enum.
+
 ### Runner and events
 
 ```go
@@ -426,6 +430,10 @@ ttanic version
 (`cp`/`mv` earn their place for exactly one reason: keeping the manifest in sync from scripts. They are thin wrappers over the same `Copy`/`Move` ops the TUI uses.)
 
 `ttanic init` defaults to non-interactive (flags + sane defaults, scriptable). `--interactive` asks the same questions as the TUI wizard through plain terminal prompts -- `huh` forms run standalone without a Bubble Tea program, so this is the same form code, not a parallel implementation.
+
+**Flags come in two kinds**, mirroring the config-vs-intent rule: per-verb intent flags (`--delete`, `--recursive`, `--deep`, `--yes`, ...) populate op fields; and persistent root flags (`--level`, `--workers`) override config for this run, merged as the final layer of config resolution (defaults -> global file -> project file -> flags) before `engine.New`. Because the bare root command launches the TUI, the persistent flags apply there identically: `ttanic --level best` opens a TUI session with that level. Ops never see config either way.
+
+**Help**: cobra auto-generates `ttanic help [command]` and `-h`/`--help` for every verb from the command definitions; the TUI equivalent is `?`.
 
 Conventions: errors to stderr, exit 0 success / 1 operational failure (details in the report) / 2 usage error. Progress events render as a single rewriting line when stderr is a TTY, silence otherwise. `--json` output is post-MVP but the command layer only ever formats `Report` values, so adding it is a formatter, not a refactor.
 
