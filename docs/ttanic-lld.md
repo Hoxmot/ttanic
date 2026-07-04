@@ -30,6 +30,8 @@ ttanic/
 │       ├── keymap/           # key -> action table
 │       └── views/            # tree, statusbar, dialogs, wizard, help
 ├── docs/
+├── justfile                  # task runner (casey/just)
+├── .golangci.yaml
 └── .goreleaser.yaml
 ```
 
@@ -43,7 +45,13 @@ Direct dependencies (all pure Go):
 | `github.com/BurntSushi/toml` | config (has `MetaData.IsDefined` for merge semantics) |
 | `github.com/spf13/cobra` | CLI verbs, completions |
 | `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss`, `huh` | TUI |
-| `github.com/sahilm/fuzzy` | fuzzy matching for `<SUPER>/` |
+| `github.com/sahilm/fuzzy` | fuzzy matching for `<leader>/` |
+
+## Tooling
+
+- **Task runner: `just`** (casey/just) rather than make -- recipes are plain commands without phony-target ceremony. Baseline `justfile` recipes: `build`, `test`, `cover`, `lint`, `fmt`, `run`, `snapshot` (`goreleaser release --snapshot --clean`), and `ci` (fmt-check + lint + test -- the exact set GitHub Actions runs, so CI is reproducible locally).
+- **Linting**: `golangci-lint` (govet, staticcheck, errcheck, revive), configured in `.golangci.yaml`.
+- `just` is a dev-time dependency only; users installing via `go install` or release binaries never need it.
 
 ## Domain types (`internal/engine`, shared)
 
@@ -126,11 +134,18 @@ walk(src) ──> tar.Writer ──> zstd.Writer ──> xxh3-tee ──> dst.tt
 - Reject entries whose cleaned path escapes `dstDir` (`..`, absolute paths) -- fail the whole extraction, this is a malformed archive.
 - Never write *through* a symlink: if an ancestor of the target resolves to a symlink created during this extraction, error.
 - Restore mode and mtime; restore symlinks as symlinks (targets verbatim, not validated -- they may point anywhere, same as tar).
-- Collision with an existing file at the destination -> `Prompter` decision (overwrite / rename / abort), decided once for the archive, not per file.
+- Collision: if the extraction target (the top-level directory or file the archive would create) already exists, error immediately, before a single byte is written. No merging into existing directories, no overwrite prompt -- the user renames or removes the obstacle and retries. (Compression collisions keep the overwrite/rename/abort prompt; the asymmetry is deliberate: overwriting an archive replaces one file, merging into a directory entangles two trees.)
 
-### Symlinks and hardlinks (resolved open question)
+### Symlinks and hardlinks
 
-Symlinks are stored as symlinks (tar typeflag `TypeSymlink`), never followed -- following would silently duplicate data and can loop. Hardlinks are stored as independent regular files in MVP (correct, just larger); proper `TypeLink` support is a future nicety.
+MVP does not archive symlinks. When the create-walker meets one, behavior follows config `archive.on_symlink`:
+
+- `error` (default): fail that item with a message naming the symlink -- nothing is silently left out
+- `skip`: omit it from the archive; the operation report counts it as skipped
+
+Future: a `follow` mode that resolves targets and stores their content (needs loop detection and a policy for targets outside the tree), and/or storing links as tar `TypeSymlink` entries. The manifest `files.kind`/`link_target` columns already accommodate that.
+
+Extraction is more permissive than creation: foreign archives may legitimately contain symlink entries, and those are restored as symlinks (targets verbatim, never dereferenced). Hardlink entries are extracted as regular files.
 
 ### Verify
 
@@ -149,10 +164,14 @@ type Store interface {
     RenamePrefix(ctx context.Context, oldPrefix, newPrefix string) error // rename/move support
     DeleteArchive(ctx context.Context, relPath string) error
     SetSHA256(ctx context.Context, relPath, sum string) error
+    // SetStatus persists a scan verdict (ok|stale|missing) on an archive row,
+    // so the TUI can show last-known status markers without rescanning.
     SetStatus(ctx context.Context, relPath string, s Status) error
     // contents
     ListFiles(ctx context.Context, relPath string) ([]archive.FileRecord, error)
     AllFilePaths(ctx context.Context) ([]PathRef, error) // feed for fuzzy search
+    // Close flushes and releases the backend (for SQLite: checkpoints the WAL,
+    // closes the db handle). Store is an io.Closer; callers defer it.
     Close() error
 }
 ```
@@ -199,13 +218,17 @@ CREATE INDEX idx_files_relpath ON files(rel_path);
 
 `size` + `mtime_ns` on `archives` are what the quick scan compares against `stat()`; `xxh3` is what the deep scan compares.
 
+Contents are stored flat (`rel_path` per row), not as a parent-pointer graph: archive contents are immutable, so the tree never mutates in place -- the one operation graphs are good at. The TUI's expanded-archive tree is built in memory: one `WHERE archive_id = ?` fetch, then an O(n) pass splitting paths on `/`. That in-memory node structure is needed for rendering under either storage design; flat paths just make the fetch, prefix queries, and the fuzzy-search feed trivial.
+
 ### Migrations (resolved open question)
 
 `meta.schema_version` holds an integer. Migrations are an ordered, embedded list of SQL scripts applied in one transaction at open when the stored version is behind. Before migrating, the backend copies `manifest.db` to `manifest.db.bak` (cheap insurance; overwritten each migration). Opening a manifest with a version *newer* than the binary understands is an error ("upgrade ttanic"), never a silent downgrade.
 
 ### Search
 
-Fuzzy search does not use SQL matching. The engine assembles candidates -- loose file paths from a filesystem walk plus `AllFilePaths()` from the manifest (each tagged with its containing archive) -- and ranks them in memory with `sahilm/fuzzy`. Simple, and fine into the hundreds of thousands of entries; if a profile ever says otherwise, an FTS5 prefilter can be added behind the same engine call.
+Fuzzy search does not use SQL matching. The engine assembles candidates -- loose file paths from a filesystem walk plus `AllFilePaths()` from the manifest (each tagged with its containing archive) -- and ranks them in memory with `sahilm/fuzzy`.
+
+Loose files are deliberately **not** indexed in the manifest: the filesystem already is the authoritative, always-fresh index of loose files (one walk is cheap), and mirroring it would turn every ordinary `mv`/`rm` done in a shell into manifest drift. The manifest indexes only what cannot be `stat`ed directly -- archive contents. Simple, and fine into the hundreds of thousands of entries; if a profile ever says otherwise, an FTS5 prefilter can be added behind the same engine call.
 
 ### Drift: scan
 
@@ -221,6 +244,7 @@ Fix operations: `forget` (drop manifest row), `adopt` (List + hash an untracked 
 - **Discovery**: walk up from CWD looking for `.ttanic/`. Nearest ancestor wins. Inside a project, walks (scan, recursive compress, tree) that encounter *another* `.ttanic/` deeper down treat that subtree as a foreign project: skip it and warn (resolved open question).
 - **Init**: creates `.ttanic/config.toml` (commented defaults) and the manifest. The TUI wizard (`huh`) asks: compression level, ignore patterns, confirm defaults; `ttanic init` takes the same as flags with sane defaults.
 - **Locking**: `.ttanic/lock` acquired with `flock` (LOCK_EX|LOCK_NB) for the process lifetime; contains PID for diagnostics. Two concurrent ttanic instances on one project would race verify-then-delete; the second instance fails fast with a clear message. Read-only commands (`ls`, `search`) skip the lock.
+- **Crash safety**: this is why it's `flock` and not a lock*file whose existence is the lock*. The lock lives on the open file descriptor, so the kernel releases it the instant the process dies -- crash, SIGKILL, panic, anything. A leftover `.ttanic/lock` file after a crash is inert; the next instance simply flocks it again. No stale-lock detection or cleanup logic exists because none is needed.
 
 ## `internal/config`
 
@@ -229,17 +253,23 @@ Fix operations: `forget` (drop manifest row), `adopt` (List + hash an untracked 
 level   = "default"   # fastest | default | better | best
 workers = 0           # 0 = GOMAXPROCS
 
-[ignore]
-patterns = [".git/", ".DS_Store"]
+[archive]
+on_symlink = "error"  # error | skip   ("follow" is future work)
 
 [ui]
 theme       = "default"
 show_hidden = false
 sort        = "name"  # name | size | mtime
 editor      = ""      # "" -> $VISUAL -> $EDITOR
+leader      = "space" # prefix key for chords, e.g. <leader>/ = fuzzy search
+icons       = "unicode" # unicode | nerd | ascii
 ```
 
-Load order: built-in defaults -> `$XDG_CONFIG_HOME/ttanic/config.toml` (via `os.UserConfigDir`) -> `<project>/.ttanic/config.toml`. Merging is per-key: a key overrides only if the file actually defines it (checked with `toml.MetaData.IsDefined`), so a project file setting only `level` doesn't reset UI preferences. `ignore.patterns` is one of the merged keys, not appended -- last definition wins, keeping reasoning simple.
+**Global config dir**: `$XDG_CONFIG_HOME/ttanic/` when the variable is set, otherwise `~/.config/ttanic/` -- on macOS too. (Deliberately *not* `os.UserConfigDir`, which on macOS points at `~/Library/Application Support`; CLI users expect and dotfile-manage `~/.config`.)
+
+Load order: built-in defaults -> global `config.toml` -> `<project>/.ttanic/config.toml`. Merging is per-key: a key overrides only if the file actually defines it (checked with `toml.MetaData.IsDefined`), so a project file setting only `level` doesn't reset UI preferences.
+
+**Ignore patterns** live in dedicated files, not in config: `~/.config/ttanic/ignore` (global) and `.ttanic/ignore` (project), gitignore syntax including `!` negation. Unlike config keys, ignore files *layer*: global patterns apply first, project patterns append and can negate them -- same model as `~/.config/git/ignore` vs `.gitignore`. Edited by hand or via `ttanic ignore`.
 
 Deliberately not configurable: delete confirmation and verify-then-delete. Those are safety invariants, not preferences.
 
@@ -308,11 +338,75 @@ Steps 3-4 failing leaves both the archive and the original in place.
 
 `Sums` computes SHA-256 of the requested archives (all tracked archives if no target), emits `SHA256SUMS`-format lines (`<hex>  <path>`) compatible with `sha256sum -c` / `shasum -a 256 -c`, and with `Write: true` also caches each sum in `archives.sha256` and writes the `SHA256SUMS` file. xxh3 remains the integrity mechanism; sha256 exists purely for comparison with the outside world.
 
+## Flows
+
+Component view -- who is allowed to call whom:
+
+```mermaid
+graph TD
+    CLI["internal/cli (cobra verbs)"] --> ENG["internal/engine (ops, runner, events)"]
+    TUI["internal/tui (Bubble Tea)"] --> ENG
+    CLI --> CFG[internal/config]
+    TUI --> CFG
+    CLI --> PRJ["internal/project (discovery, lock)"]
+    TUI --> PRJ
+    ENG --> ARC["internal/archive (tar+zstd, xxh3)"]
+    ENG --> MAN["internal/manifest (Store)"]
+    ENG --> FS[internal/fsops]
+    MAN --> DB[(".ttanic/manifest.db")]
+    ARC --> DISK[(filesystem)]
+    FS --> DISK
+```
+
+Verify-then-delete, the central safety flow:
+
+```mermaid
+sequenceDiagram
+    participant U as UI (CLI or TUI)
+    participant E as engine
+    participant A as archive
+    participant M as manifest
+    participant D as disk
+
+    U->>E: Compress{photos/, DeleteOriginal: true}
+    E->>A: Create(photos/, photos.tar.zst)
+    A->>D: stream tar+zstd to photos.tar.zst.ttanic-tmp (xxh3 per file + stream)
+    A-->>E: Info{archive hash, per-file hashes}
+    E->>D: fsync + rename tmp -> photos.tar.zst
+    E->>A: Verify(photos.tar.zst, Info)
+    A->>D: re-read archive, re-hash, compare
+    A-->>E: VerifyReport: clean
+    E->>M: UpsertArchive (skipped + warning in standalone mode)
+    E->>D: RemoveAll(photos/)   [only reached if verify AND upsert succeeded]
+    E-->>U: OpDone{report}
+```
+
+A TUI operation end to end, including a mid-flight prompt:
+
+```mermaid
+sequenceDiagram
+    participant K as Browse mode (key handler)
+    participant R as root model
+    participant G as op goroutine (tea.Cmd)
+    participant E as engine
+
+    K->>R: `c` on cursor/selection
+    R->>R: push Progress mode
+    R->>G: go engine.Run(ctx, op, events, prompter)
+    E-->>G: OpStarted, Progress...
+    G-->>R: each Event forwarded as tea.Msg
+    E->>G: Prompter.Choose("photos.tar.zst exists", ...)
+    G-->>R: push Dialog mode (op goroutine blocks)
+    R-->>G: user picked "rename" (via channel)
+    E-->>G: ItemDone, OpDone{report}
+    G-->>R: pop modes, show report, refresh affected tree nodes
+```
+
 ## `internal/cli` (cobra)
 
 ```
 ttanic                      -> launches TUI
-ttanic init
+ttanic init                 [--interactive]
 ttanic compress <path>...   [--delete] [--recursive]
 ttanic decompress <path>... [--recursive]
 ttanic ls <archive>         # manifest if tracked, archive.List otherwise
@@ -323,11 +417,15 @@ ttanic search <query>
 ttanic scan                 [--deep] [--contents]
 ttanic verify <archive>...
 ttanic sums [<archive>...]  [--write]
+ttanic ignore <pattern>...  [--global]   # append to the ignore file
+ttanic ignore list                       # print effective patterns and their source
 ttanic config               [get <key> | set <key> <value> | edit]
 ttanic version
 ```
 
 (`cp`/`mv` earn their place for exactly one reason: keeping the manifest in sync from scripts. They are thin wrappers over the same `Copy`/`Move` ops the TUI uses.)
+
+`ttanic init` defaults to non-interactive (flags + sane defaults, scriptable). `--interactive` asks the same questions as the TUI wizard through plain terminal prompts -- `huh` forms run standalone without a Bubble Tea program, so this is the same form code, not a parallel implementation.
 
 Conventions: errors to stderr, exit 0 success / 1 operational failure (details in the report) / 2 usage error. Progress events render as a single rewriting line when stderr is a TTY, silence otherwise. `--json` output is post-MVP but the command layer only ever formats `Report` values, so adding it is a formatter, not a refactor.
 
@@ -350,7 +448,7 @@ type App struct {
 }
 ```
 
-The mode stack routes key events: the top mode gets them first (a dialog swallows everything; Browse handles navigation). `?` pushes Help, `:` pushes Command, `/` pushes Search (filter within tree), `<SUPER>/` pushes FuzzySearch, `ESC` pops / clears selection.
+The mode stack routes key events: the top mode gets them first (a dialog swallows everything; Browse handles navigation). `?` pushes Help, `:` pushes Command, `/` pushes Search (filter within tree), `<leader>/` pushes FuzzySearch, `ESC` pops / clears selection.
 
 ### Tree view
 
@@ -373,9 +471,11 @@ The mode stack routes key events: the top mode gets them first (a dialog swallow
 | `v` / `V` | toggle select / visual range mode |
 | `S` | init wizard (uninitialised only) |
 | `:` | command line (`:cd`, `:scan`, `:scan!`, `:init`, `:config`, `:sums`, `:q`) |
-| `/`, `<SUPER>/` | filter, fuzzy search |
+| `/`, `<leader>/` | filter, fuzzy search |
 | `?` | help |
 | `ESC` | pop mode / clear selection |
+
+`<leader>` is a configurable prefix key (`ui.leader`, default: space) pressed *before* the next key, vim-style -- so fuzzy search is `space` then `/`.
 
 Keymap is a data table in `keymap/`, both to feed the help view and because remappable keys (v2) then become a config loader, not a rewrite.
 
@@ -397,7 +497,23 @@ type Theme struct {
 
 All views take `*Theme`; nothing constructs a `lipgloss.Style` inline. MVP: built-in default only; the post-MVP file loader just fills this struct from `~/.config/ttanic/themes/<name>.toml`.
 
+### Icons
+
+An `IconSet` (glyphs for dir/file/archive, expand markers, status markers) sits beside `Theme`; views take both. Three built-ins, selected by `ui.icons`:
+
+- `unicode` (default): safe, widely-rendered glyphs -- `▸`/`▾` expand, `✓ ~ ✗ ?` statuses
+- `nerd`: NerdFont file-type and status glyphs. Opt-in only -- there is no reliable way to detect a patched font, and without one everything renders as tofu
+- `ascii`: pure ASCII for minimal terminals
+
+Like themes, icon sets are one struct fill -- future custom sets can load from the theme file.
+
 ## Testing strategy
+
+**Where tests live**: next to the code they test, Go-style -- `create.go` gets `create_test.go` in the same directory. Same-package tests (`package archive`) for white-box internals, `package archive_test` for exercising the public API. Fixtures (crafted tars, v1 manifest dbs) go in `testdata/` directories beside their tests; the `go` tool ignores those by convention. The CLI's end-to-end scripts are `internal/cli/testdata/*.txtar`. There is no separate top-level test tree -- the only shared test code is `manifest/storetest`, the backend conformance suite, which is an ordinary package.
+
+**Shape**: a pyramid. The bulk of coverage sits in `archive` and `engine` unit/integration tests against real temp directories (they're fast -- no mocking the filesystem). CLI testscripts cover wiring and output contracts. TUI tests are the thinnest layer because the TUI deliberately contains no logic worth testing beyond rendering and key routing. Run via `just test` / `just cover`; `just ci` is the gate.
+
+Per package:
 
 - `archive`: round-trip goldens (create -> list -> extract -> byte-compare), symlink cases, traversal-attack fixtures (crafted tars with `../` and absolute paths must be rejected), cancellation leaves no temp files.
 - `manifest/storetest`: interface conformance suite, run by the sqlite backend now and the jsonl backend later; migration test opens a v1 fixture db.
@@ -412,15 +528,20 @@ Engine-and-CLI first (decided): each milestone is shippable.
 
 - **M1 -- core engine + CLI.** `config`, `project`, `archive`, `manifest/sqlite`, `engine` with Compress/Decompress/Delete/Scan/Verify; CLI verbs `init`, `compress` (incl. `--delete`, `--recursive`), `decompress`, `ls`, `rm`, `scan`, `verify`. Verify-then-delete invariant tested. Usable tool at the end.
 - **M2 -- TUI browse + core ops.** Tree navigation, quick-scan-on-open statuses, `c C i I d`, progress modal, confirm/collision dialogs, `?` help, `:` commands, init wizard.
-- **M3 -- manifest UX + file ops.** Archive expansion, `/` filter, `<SUPER>/` fuzzy search, multi-select (`v`/`V`), `y x p r e`, `cp`/`mv`/`search`/`sums` CLI verbs, config view.
-- **M4 -- release.** goreleaser (darwin/linux, amd64/arm64), `go install` verified, README, CI release pipeline. Post-MVP backlog opens: Homebrew tap, JSONL backend, themes-from-file, single-file extraction, job queue.
+- **M3 -- manifest UX + file ops.** Archive expansion, `/` filter, `<leader>/` fuzzy search, multi-select (`v`/`V`), `y x p r e`, `cp`/`mv`/`search`/`sums` CLI verbs, config view.
+- **M4 -- release.** goreleaser (darwin/linux, amd64/arm64), `go install` verified, README, CI release pipeline. Post-MVP backlog opens: Homebrew tap, JSONL backend, themes-from-file, single-file extraction, job queue, symlink `follow` mode, global project registry (a small SQLite db in the XDG *data* dir -- not config -- listing every ttanic project on the machine: "where are my projects", cross-project search later).
 
 ## Decisions resolved in this LLD
 
 - Checksums: XXH3-128 for all integrity (per-file + per-archive); SHA-256 on demand via `sums` for external comparison, cached in the manifest.
 - Partial failure: continue + report, atomic per item; ENOSPC aborts the run.
 - Windows: unsupported -- no builds, no CI, portable-by-habit code only.
-- Symlinks stored as symlinks, never followed; hardlinks stored as regular files (MVP).
+- Symlinks: MVP refuses to archive them by default (`archive.on_symlink = "error"`), configurable to `skip`; `follow` is future work. Foreign archives containing symlink entries extract them as symlinks. Hardlinks stored as regular files.
+- Decompression collisions: error immediately if the extraction target exists; never merge, never prompt.
+- Ignore patterns: layered `ignore` files (global + `.ttanic/ignore`), gitignore syntax, managed via `ttanic ignore`.
+- `<leader>` chord key, vim-style: default space, configurable via `ui.leader`.
+- Config dir: `$XDG_CONFIG_HOME` -> `~/.config` fallback, on macOS too.
+- Tooling: `just` + golangci-lint; dev-only dependencies.
 - Nested projects: nearest `.ttanic/` wins; inner projects are skipped by outer walks with a warning.
 - Schema migrations: versioned, embedded, transactional, with a `.bak` copy; never open newer schemas.
 - Naming: `X` -> `X.tar.zst` for files and directories alike.

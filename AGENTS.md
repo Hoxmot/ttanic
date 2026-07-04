@@ -4,7 +4,7 @@
 
 ## Project status
 
-Design phase — no code yet. The source of truth for all design decisions is `docs/ttanic-hld.md`. Read it before proposing or implementing anything, and keep it updated when decisions change.
+Design phase — no code yet. The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
 
 ## Tech stack
 
@@ -27,3 +27,4 @@ These are settled decisions (see the HLD for rationale) — do not silently devi
 
 - Commit messages: conventional-commit style prefixes as seen in history (`docs:`, `feat:`, `fix:`, ...)
 - Documentation lives in `docs/`
+- Task runner: `just` (not make) — build/test/lint recipes live in `justfile` once code lands; `just ci` mirrors CI

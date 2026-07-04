@@ -27,7 +27,7 @@ The program should have a `?` command to display the help menu.
 
 The program should have `/` command for looking for particular files in the directory.
 
-The user can use `<SUPER>/` to do fuzzy search from the files in the tar-tanic project or from the file from the directory the program was open down (if the program was opened outside of tar-tanic project).
+The user can use `<leader>/` to do fuzzy search from the files in the tar-tanic project or from the file from the directory the program was open down (if the program was opened outside of tar-tanic project). The leader key is configurable, default: space.
 
 I'd like to also have a config view for the user to modify the config. If the user is in the tar-tanic project, the program should edit directory-level settings. If the user outside of tar-tanic project, the user edits global settings.
 
@@ -186,13 +186,9 @@ These are TUI-only. The CLI doesn't mirror them (`cp`/`mv`/`rm` already exist in
 ### Future considerations (explicitly not designed yet)
 
 - **Plugins**: extensibility is attractive, but the right API surface isn't clear yet (exec-style hooks like git? embedded scripting?). No commitment now; the decisions already made keep the door open -- the core engine is a library separate from the UIs, operations are messages, and the CLI can grow `--json` output for external tooling.
+- **Global project registry**: a device-wide SQLite db in the XDG data dir listing every ttanic project on the machine -- "where are my projects", and a foundation for cross-project search. Not MVP.
 
 ## Open questions for low-level design
 
-- Checksum algorithm and granularity: fast xxhash vs sha256; per-file, per-archive, or both.
-- Symlink handling (likely tar's default: store the link itself, don't follow).
-- Behavior for nested `.ttanic/` projects (likely: nearest ancestor wins, warn on nesting).
-- Manifest schema versioning and migrations.
-- Partial-failure semantics for recursive compress (continue and report vs abort).
-- Windows support level (paths, config location, terminal behavior).
+All resolved during low-level design -- see `ttanic-lld.md`, section "Decisions resolved in this LLD" (checksums, symlinks, nested projects, schema migrations, partial-failure semantics, Windows support, and more).
 
