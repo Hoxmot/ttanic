@@ -10,6 +10,8 @@ Design phase — no code yet (update this line as milestones land). The sources 
 
 Implementation is tracked in GitHub issues #1–#52 (`gh issue list`), grouped into milestones M1–M4 mirroring the LLD. Issue number = task ID: task M1.13 is issue #13. Each issue body has Context / Needs / Scope / Done when.
 
+The `work-issue` skill (`.claude/skills/work-issue/`) encodes the full flow — issue → branch → plan → operator ack → implement → PR → review loop. Use it when working on an issue; the rules below are its foundation.
+
 - **Pick up an issue**: read its body plus the LLD sections it references. **Needs** lists blocking task IDs — do not start an issue whose dependencies aren't merged.
 - **Branch + PR per issue**: branch from `main` named like `m1-1-scaffold`; the PR body must contain `Closes #<n>` and note any judgment calls. Never commit or push to `main` directly; the user reviews and merges.
 - **Gate**: `just ci` must pass locally before the PR and in CI (until issue #1 lands the justfile, `go build ./... && go test ./...` is the stand-in).
