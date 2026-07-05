@@ -88,35 +88,44 @@ func renderConfigToml(answers InitAnswers) string {
 	var b strings.Builder
 	b.WriteString(configTomlHeader)
 	b.WriteString("\n[compression]\n")
-	b.WriteString(tomlField("level", levelSet, true, string(level), "fastest | default | better | best"))
-	b.WriteString(tomlField("workers", workersSet, false, strconv.Itoa(workers), "0 = GOMAXPROCS"))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "level", Active: levelSet, Quoted: true, Value: string(level), Comment: "fastest | default | better | best"}))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "workers", Active: workersSet, Value: strconv.Itoa(workers), Comment: "0 = GOMAXPROCS"}))
 	b.WriteString("\n[archive]\n")
-	b.WriteString(tomlField("on_symlink", onSymlinkSet, true, string(onSymlink), "error | skip"))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "on_symlink", Active: onSymlinkSet, Quoted: true, Value: string(onSymlink), Comment: "error | skip"}))
 	b.WriteString("\n[ui]\n")
-	b.WriteString(tomlField("theme", false, true, d.UI.Theme, ""))
-	b.WriteString(tomlField("show_hidden", false, false, strconv.FormatBool(d.UI.ShowHidden), ""))
-	b.WriteString(tomlField("sort", false, true, string(d.UI.Sort), "name | size | mtime"))
-	b.WriteString(tomlField("editor", false, true, d.UI.Editor, `"" -> $VISUAL -> $EDITOR`))
-	b.WriteString(tomlField("icons", false, true, string(d.UI.Icons), "unicode | nerd | ascii"))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "theme", Quoted: true, Value: d.UI.Theme}))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "show_hidden", Value: strconv.FormatBool(d.UI.ShowHidden)}))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "sort", Quoted: true, Value: string(d.UI.Sort), Comment: "name | size | mtime"}))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "editor", Quoted: true, Value: d.UI.Editor, Comment: `"" -> $VISUAL -> $EDITOR`}))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "icons", Quoted: true, Value: string(d.UI.Icons), Comment: "unicode | nerd | ascii"}))
 	b.WriteString("\n[keys]\n")
-	b.WriteString(tomlField("leader", false, true, d.Keys.Leader, ""))
+	b.WriteString(tomlField(tomlFieldOpts{Key: "leader", Quoted: true, Value: d.Keys.Leader}))
 	return b.String()
 }
 
+// tomlFieldOpts describes one config.toml line for tomlField.
+type tomlFieldOpts struct {
+	Key     string
+	Active  bool // write uncommented (an answer overrides the default); default false: commented
+	Quoted  bool // wrap Value in TOML string quotes
+	Value   string
+	Comment string // appended as "  # Comment" when non-empty
+}
+
 // tomlField renders one config.toml line: commented (prefixed "#") unless
-// active, quoted per TOML string syntax when quoted is set.
-func tomlField(key string, active, quoted bool, value, comment string) string {
+// Active is set.
+func tomlField(f tomlFieldOpts) string {
 	prefix := "#"
-	if active {
+	if f.Active {
 		prefix = ""
 	}
-	v := value
-	if quoted {
-		v = strconv.Quote(value)
+	v := f.Value
+	if f.Quoted {
+		v = strconv.Quote(f.Value)
 	}
-	line := fmt.Sprintf("%s%s = %s", prefix, key, v)
-	if comment != "" {
-		line += "  # " + comment
+	line := fmt.Sprintf("%s%s = %s", prefix, f.Key, v)
+	if f.Comment != "" {
+		line += "  # " + f.Comment
 	}
 	return line + "\n"
 }

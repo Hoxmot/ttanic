@@ -29,6 +29,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// helperMaxLifetime bounds how long a stray helper process could survive if
+// the parent test somehow failed to kill it -- the parent always kills it
+// within milliseconds under normal operation, so this only caps the
+// worst-case orphan lifetime.
+const helperMaxLifetime = 30 * time.Second
+
 func runLockHelper(dir string) {
 	lk, err := AcquireLock(dir)
 	if err != nil {
@@ -37,7 +43,25 @@ func runLockHelper(dir string) {
 	}
 	_ = lk
 	fmt.Println("locked")
-	time.Sleep(time.Hour) // parent kills us long before this elapses
+	time.Sleep(helperMaxLifetime)
+}
+
+// waitTimeout waits for cmd to exit, reporting a timeout error instead of
+// blocking forever if it doesn't within d. The exit error itself (expected
+// and non-nil when the process was killed) is discarded -- only whether it
+// exited at all is interesting here.
+func waitTimeout(cmd *exec.Cmd, d time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(d):
+		return fmt.Errorf("process %d did not exit within %s", cmd.Process.Pid, d)
+	}
 }
 
 func TestAcquireLockDouble(t *testing.T) {
@@ -74,7 +98,7 @@ func TestLockReleasedAfterProcessExit(t *testing.T) {
 	}
 	defer func() {
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = waitTimeout(cmd, 5*time.Second)
 	}()
 
 	scanner := bufio.NewScanner(stdout)
@@ -92,7 +116,9 @@ func TestLockReleasedAfterProcessExit(t *testing.T) {
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("killing helper process: %v", err)
 	}
-	_ = cmd.Wait()
+	if err := waitTimeout(cmd, 5*time.Second); err != nil {
+		t.Fatalf("helper process did not exit after SIGKILL: %v", err)
+	}
 
 	lk, err := AcquireLock(root)
 	if err != nil {
