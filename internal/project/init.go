@@ -30,7 +30,9 @@ type InitAnswers struct {
 // Validate reports whether the set fields describe values config.Config
 // will accept, so a bad answer (e.g. a mistyped level) fails at Init time
 // rather than silently producing a config.toml that the next config.Load
-// rejects.
+// rejects. Ignore entries are checked against the ignore file's line-based
+// format: an entry with a newline would silently split into two patterns,
+// and one starting with "#" would be read back as a comment.
 func (a InitAnswers) Validate() error {
 	cfg := config.Default()
 	if a.Level != nil {
@@ -42,7 +44,18 @@ func (a InitAnswers) Validate() error {
 	if a.OnSymlink != nil {
 		cfg.Archive.OnSymlink = *a.OnSymlink
 	}
-	return cfg.Validate()
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	for _, p := range a.Ignore {
+		if strings.ContainsAny(p, "\n\r") {
+			return fmt.Errorf("ignore pattern %q: must not contain a newline", p)
+		}
+		if strings.HasPrefix(p, "#") {
+			return fmt.Errorf("ignore pattern %q: would be read back as a comment", p)
+		}
+	}
+	return nil
 }
 
 // Init creates dir's .ttanic directory, a config.toml containing only the

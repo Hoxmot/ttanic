@@ -35,13 +35,25 @@ func IsProjectRoot(dir string) (bool, error) {
 }
 
 // Find walks up from cwd looking for the nearest ancestor (inclusive) that
-// is a project root. It returns ErrNoProject if it reaches the filesystem
-// root without finding one, or any other error encountered while checking an
-// ancestor (e.g. permission denied) wrapped with the offending path.
+// is a project root. cwd must be an existing directory: without this check a
+// nonexistent path would silently resolve to whatever project its nearest
+// existing ancestor lives in (a stat on a child of a missing directory reads
+// as "not a root, keep walking"), so a typo'd path would pick the wrong
+// project instead of erroring. Find returns ErrNoProject if it reaches the
+// filesystem root without finding one, or any other error encountered while
+// checking an ancestor (e.g. permission denied) wrapped with the offending
+// path.
 func Find(cwd string) (string, error) {
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return "", fmt.Errorf("resolving cwd: %w", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", fmt.Errorf("checking %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s: not a directory", dir)
 	}
 	for {
 		ok, err := IsProjectRoot(dir)

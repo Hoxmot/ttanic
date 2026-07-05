@@ -59,6 +59,35 @@ func TestFindNoProject(t *testing.T) {
 	}
 }
 
+func TestFindNonexistentCwd(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, config.ProjectDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A nonexistent cwd must error, not resolve to the nearest existing
+	// ancestor's project.
+	_, err := Find(filepath.Join(root, "does", "not", "exist"))
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Find() error = %v, want errors.Is(..., os.ErrNotExist)", err)
+	}
+}
+
+func TestFindFileCwd(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, config.ProjectDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "plain.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Find(file); err == nil {
+		t.Fatal("Find() error = nil, want an error for a non-directory cwd")
+	}
+}
+
 func TestIsProjectRootFile(t *testing.T) {
 	dir := t.TempDir()
 	// .ttanic exists but is a plain file, not a directory: not a marker.

@@ -150,6 +150,24 @@ func TestInitRejectsInvalidAnswers(t *testing.T) {
 	}
 }
 
+func TestInitRejectsBadIgnorePatterns(t *testing.T) {
+	for name, pattern := range map[string]string{
+		"newline":      "*.log\n!keep.log",
+		"leading-hash": "#not-a-comment",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := Init(dir, InitAnswers{Ignore: []string{pattern}})
+			if err == nil {
+				t.Fatalf("Init() error = nil, want an error for ignore pattern %q", pattern)
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, config.ProjectDirName)); !errors.Is(statErr, os.ErrNotExist) {
+				t.Errorf(".ttanic was created despite invalid ignore pattern (stat error = %v)", statErr)
+			}
+		})
+	}
+}
+
 func TestInitStrayFileNotAlreadyInitialized(t *testing.T) {
 	dir := t.TempDir()
 	// A plain file named .ttanic (not a directory) is not a project root, so

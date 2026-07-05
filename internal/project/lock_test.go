@@ -41,7 +41,10 @@ func runLockHelper(dir string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	_ = lk
+	// The defer keeps lk reachable for the whole sleep. Without it the GC
+	// could collect the Lock (os.File's cleanup closes the fd, releasing the
+	// flock) while the parent still expects the lock to be held.
+	defer func() { _ = lk.Close() }()
 	fmt.Println("locked")
 	time.Sleep(helperMaxLifetime)
 }
@@ -74,11 +77,20 @@ func TestAcquireLockDouble(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first AcquireLock() error = %v", err)
 	}
-	defer func() { _ = lk.Close() }()
 
 	if _, err := AcquireLock(root); !errors.Is(err, ErrLocked) {
 		t.Fatalf("second AcquireLock() error = %v, want ErrLocked", err)
 	}
+
+	// An explicit Close releases the lock: re-acquiring must now succeed.
+	if err := lk.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	lk2, err := AcquireLock(root)
+	if err != nil {
+		t.Fatalf("AcquireLock() after Close() error = %v", err)
+	}
+	defer func() { _ = lk2.Close() }()
 }
 
 func TestLockReleasedAfterProcessExit(t *testing.T) {
