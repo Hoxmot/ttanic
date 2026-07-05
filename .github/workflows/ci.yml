@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          # no go.sum yet (zero deps); key the cache on go.mod until one exists
+          cache-dependency-path: go.mod
+
+      - uses: extractions/setup-just@v4
+
+      # install-only: the lint itself must run through `just ci`, same
+      # entry point as local; the action still handles the binary and
+      # golangci-lint's analysis cache
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Run the gate
+        run: just ci
