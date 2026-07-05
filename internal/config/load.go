@@ -23,11 +23,12 @@ type Overrides struct {
 	ShowHidden *bool
 }
 
-// Well-known file and directory names.
+// Well-known file and directory names. Exported so internal/project (which
+// creates and discovers these) doesn't have to redeclare the same literals.
 const (
-	projectDirName = ".ttanic"     // the project marker directory
-	configFileName = "config.toml" // per-scope config, global and project
-	ignoreFileName = "ignore"      // gitignore-syntax ignore patterns
+	ProjectDirName = ".ttanic"     // the project marker directory
+	ConfigFileName = "config.toml" // per-scope config, global and project
+	IgnoreFileName = "ignore"      // gitignore-syntax ignore patterns
 )
 
 // GlobalDir returns the global ttanic config directory:
@@ -56,11 +57,11 @@ func Load(projectDir string, ov Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if err := applyFile(&cfg, filepath.Join(globalDir, configFileName)); err != nil {
+	if err := applyFile(&cfg, filepath.Join(globalDir, ConfigFileName)); err != nil {
 		return Config{}, err
 	}
 	if projectDir != "" {
-		if err := applyFile(&cfg, filepath.Join(projectDir, projectDirName, configFileName)); err != nil {
+		if err := applyFile(&cfg, filepath.Join(projectDir, ProjectDirName, ConfigFileName)); err != nil {
 			return Config{}, err
 		}
 	}
@@ -83,9 +84,9 @@ func LoadIgnore(projectDir string) (*Matcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	paths := []string{filepath.Join(globalDir, ignoreFileName)}
+	paths := []string{filepath.Join(globalDir, IgnoreFileName)}
 	if projectDir != "" {
-		paths = append(paths, filepath.Join(projectDir, projectDirName, ignoreFileName))
+		paths = append(paths, filepath.Join(projectDir, ProjectDirName, IgnoreFileName))
 	}
 	var layers [][]Rule
 	for _, p := range paths {
