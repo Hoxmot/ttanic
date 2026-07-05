@@ -261,9 +261,13 @@ theme       = "default"
 show_hidden = false
 sort        = "name"  # name | size | mtime
 editor      = ""      # "" -> $VISUAL -> $EDITOR
-leader      = "space" # prefix key for chords, e.g. <leader>/ = fuzzy search
 icons       = "unicode" # unicode | nerd | ascii
+
+[keys]
+leader = "space" # prefix key for chords, e.g. <leader>/ = fuzzy search
 ```
+
+`[keys]` is its own section (not a `[ui]` key) because keybindings are input configuration, not appearance; future custom key mappings join it without cluttering `[ui]`.
 
 **Global config dir**: `$XDG_CONFIG_HOME/ttanic/` when the variable is set, otherwise `~/.config/ttanic/` -- on macOS too. (Deliberately *not* `os.UserConfigDir`, which on macOS points at `~/Library/Application Support`; CLI users expect and dotfile-manage `~/.config`.)
 
@@ -431,7 +435,7 @@ ttanic version
 
 `ttanic init` defaults to non-interactive (flags + sane defaults, scriptable). `--interactive` asks the same questions as the TUI wizard through plain terminal prompts -- `huh` forms run standalone without a Bubble Tea program, so this is the same form code, not a parallel implementation.
 
-**Flags come in two kinds**, mirroring the config-vs-intent rule: per-verb intent flags (`--delete`, `--recursive`, `--deep`, `--yes`, ...) populate op fields; and persistent root flags (`--level`, `--workers`) override config for this run, merged as the final layer of config resolution (defaults -> global file -> project file -> flags) before `engine.New`. Because the bare root command launches the TUI, the persistent flags apply there identically: `ttanic --level best` opens a TUI session with that level. Ops never see config either way.
+**Flags come in two kinds**, mirroring the config-vs-intent rule: per-verb intent flags (`--delete`, `--recursive`, `--deep`, `--yes`, ...) populate op fields; and persistent root flags (`--level`, `--workers`, `--on-symlink`, `--sort`, `--show-hidden`) override config for this run, merged as the final layer of config resolution (defaults -> global file -> project file -> flags) before `engine.New`. Boolean override flags must be able to override in *both* directions ("config says show hidden, hide for this run"); whether that's spelled `--show-hidden=false` or a `--no-show-hidden` companion is decided in M1.18. Keys with no sensible per-run override (`theme`, `icons`, `editor`, `leader`) get no flag. Because the bare root command launches the TUI, the persistent flags apply there identically: `ttanic --level best` opens a TUI session with that level. Ops never see config either way.
 
 **Help**: cobra auto-generates `ttanic help [command]` and `-h`/`--help` for every verb from the command definitions; the TUI equivalent is `?`.
 
