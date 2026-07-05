@@ -23,6 +23,13 @@ type Overrides struct {
 	ShowHidden *bool
 }
 
+// Well-known file and directory names.
+const (
+	projectDirName = ".ttanic"     // the project marker directory
+	configFileName = "config.toml" // per-scope config, global and project
+	ignoreFileName = "ignore"      // gitignore-syntax ignore patterns
+)
+
 // GlobalDir returns the global ttanic config directory:
 // $XDG_CONFIG_HOME/ttanic when the variable is set, otherwise
 // ~/.config/ttanic — on macOS too (deliberately not os.UserConfigDir).
@@ -49,11 +56,11 @@ func Load(projectDir string, ov Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if err := applyFile(&cfg, filepath.Join(globalDir, "config.toml")); err != nil {
+	if err := applyFile(&cfg, filepath.Join(globalDir, configFileName)); err != nil {
 		return Config{}, err
 	}
 	if projectDir != "" {
-		if err := applyFile(&cfg, filepath.Join(projectDir, ".ttanic", "config.toml")); err != nil {
+		if err := applyFile(&cfg, filepath.Join(projectDir, projectDirName, configFileName)); err != nil {
 			return Config{}, err
 		}
 	}
@@ -63,6 +70,35 @@ func Load(projectDir string, ov Overrides) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// LoadIgnore resolves the layered ignore rules: the global ignore file
+// (GlobalDir()/ignore), then <projectDir>/.ttanic/ignore. Project rules are
+// appended after global ones, so a project "!" pattern can re-include what
+// the global file ignores. projectDir == "" means standalone mode (no project
+// layer). Missing files are fine; with no ignore file at all the returned
+// matcher matches nothing.
+func LoadIgnore(projectDir string) (*Matcher, error) {
+	globalDir, err := GlobalDir()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{filepath.Join(globalDir, ignoreFileName)}
+	if projectDir != "" {
+		paths = append(paths, filepath.Join(projectDir, projectDirName, ignoreFileName))
+	}
+	var layers [][]Rule
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		layers = append(layers, ParseIgnore(string(data)))
+	}
+	return NewMatcher(layers...), nil
 }
 
 // applyFile merges the keys defined in the TOML file at path into cfg. A

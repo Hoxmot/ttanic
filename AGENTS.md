@@ -4,7 +4,7 @@
 
 ## Project status
 
-M1 in progress — repository scaffolded (M1.1), no functionality yet (update this line as milestones land). The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
+M1 in progress — scaffolding and CI are in place (M1.1–M1.2); `internal/config` has loading/merging (M1.3) and layered ignore files (M1.4); no user-facing functionality yet (update this line as milestones land). The sources of truth for design decisions are `docs/ttanic-hld.md` (what and why) and `docs/ttanic-lld.md` (how: packages, schemas, interfaces). Read them before proposing or implementing anything, and keep them updated when decisions change.
 
 ## Workflow
 
