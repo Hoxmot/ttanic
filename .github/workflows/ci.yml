@@ -25,8 +25,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          # no go.sum yet (zero deps); key the cache on go.mod until one exists
-          cache-dependency-path: go.mod
+          cache-dependency-path: go.sum
 
       - uses: extractions/setup-just@v4
 
