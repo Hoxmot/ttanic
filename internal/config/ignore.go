@@ -45,8 +45,13 @@ func parseLine(line string) (Rule, bool) {
 	if pat == "" {
 		return Rule{}, false
 	}
-	// A separator at the start or middle anchors the pattern to the project
-	// root; otherwise it matches at any depth, expressed as a leading "**".
+	// Gitignore anchoring: a "/" at the start or middle of a pattern means
+	// the whole path is spelled out relative to the root — "doc/frotz" is
+	// that one specific path, "/dist" is the top-level dist. A pattern
+	// without a separator is just a name, and a bare name matches at any
+	// depth ("frotz" hits every frotz in the tree). The trailing "/" was
+	// already consumed above as the dir-only marker, so it never anchors.
+	// Any-depth matching is expressed as a leading "**" segment.
 	anchored := strings.Contains(pat, "/")
 	pat = strings.TrimPrefix(pat, "/")
 	r.segs = strings.Split(pat, "/")

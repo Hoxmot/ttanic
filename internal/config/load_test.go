@@ -261,6 +261,98 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+// writeIgnore writes content as dir/ignore, creating dir. Empty content is
+// skipped, mirroring writeConfig.
+func writeIgnore(t *testing.T, dir, content string) {
+	t.Helper()
+	if content == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignore"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadIgnore(t *testing.T) {
+	tests := []struct {
+		name       string
+		global     string
+		project    string
+		standalone bool // load with projectDir == ""
+		path       string
+		isDir      bool
+		want       bool
+	}{
+		{
+			name: "both files absent, matches nothing",
+			path: "anything.log",
+		},
+		{
+			name:   "global only",
+			global: "*.log\n",
+			path:   "a.log",
+			want:   true,
+		},
+		{
+			name:    "project only",
+			project: "build/\n",
+			path:    "build",
+			isDir:   true,
+			want:    true,
+		},
+		{
+			name:    "project negates global",
+			global:  "*.log\n",
+			project: "!keep.log\n",
+			path:    "keep.log",
+			want:    false,
+		},
+		{
+			name:       "standalone mode skips project file",
+			project:    "*.log\n",
+			standalone: true,
+			path:       "a.log",
+			want:       false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			xdg := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+			projectDir := t.TempDir()
+			writeIgnore(t, filepath.Join(xdg, "ttanic"), tt.global)
+			writeIgnore(t, filepath.Join(projectDir, ".ttanic"), tt.project)
+			if tt.standalone {
+				projectDir = ""
+			}
+			m, err := LoadIgnore(projectDir)
+			if err != nil {
+				t.Fatalf("LoadIgnore() unexpected error: %v", err)
+			}
+			if got := m.Match(tt.path, tt.isDir); got != tt.want {
+				t.Errorf("Match(%q, %v) = %v, want %v", tt.path, tt.isDir, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("unreadable file errors with its path", func(t *testing.T) {
+		xdg := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		// A directory named "ignore" makes ReadFile fail with something
+		// other than fs.ErrNotExist.
+		if err := os.MkdirAll(filepath.Join(xdg, "ttanic", "ignore"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadIgnore("")
+		if err == nil || !strings.Contains(err.Error(), "ignore") {
+			t.Fatalf("LoadIgnore() error = %v, want it to name the ignore file", err)
+		}
+	})
+}
+
 func TestGlobalDir(t *testing.T) {
 	t.Run("XDG_CONFIG_HOME set", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", "/xdg/cfg")

@@ -59,8 +59,11 @@ func matchSegments(pat, segs []string) bool {
 			if len(pat) == 1 {
 				return len(segs) > 0
 			}
-			for skip := 0; skip <= len(segs); skip++ {
-				if matchSegments(pat[1:], segs[skip:]) {
+			// The rest of the pattern needs at least minSegs(rest) path
+			// segments, so skips that leave fewer than that cannot match.
+			rest := pat[1:]
+			for skip := 0; skip+minSegs(rest) <= len(segs); skip++ {
+				if matchSegments(rest, segs[skip:]) {
 					return true
 				}
 			}
@@ -74,67 +77,82 @@ func matchSegments(pat, segs []string) bool {
 	return len(segs) == 0
 }
 
+// minSegs is the fewest path segments a pattern can match: "**" can match
+// zero, any other segment exactly one, and a trailing "**" at least one.
+func minSegs(pat []string) int {
+	n := 0
+	for _, s := range pat {
+		if s != "**" {
+			n++
+		}
+	}
+	if len(pat) > 0 && pat[len(pat)-1] == "**" {
+		n++
+	}
+	return n
+}
+
 // matchSegment matches one path segment against one pattern segment: "*" any
 // run of bytes, "?" one byte, "[...]" a character class, "\x" a literal x.
 // None of them can match "/" because segments contain none. Matching is
 // byte-wise and case-sensitive.
 func matchSegment(pat, name string) bool {
-	px, nx := 0, 0
-	starPx, starNx := -1, 0
-	for nx < len(name) {
-		if px < len(pat) {
-			switch c := pat[px]; c {
+	patIdx, nameIdx := 0, 0
+	starPat, starName := -1, 0 // position of the last "*" and what it has eaten
+	for nameIdx < len(name) {
+		if patIdx < len(pat) {
+			switch c := pat[patIdx]; c {
 			case '*':
-				starPx, starNx = px, nx
-				px++
+				starPat, starName = patIdx, nameIdx
+				patIdx++
 				continue
 			case '?':
-				px++
-				nx++
+				patIdx++
+				nameIdx++
 				continue
 			case '[':
-				matched, next, ok := matchClass(pat, px, name[nx])
+				matched, next, ok := matchClass(pat, patIdx, name[nameIdx])
 				if ok && matched {
-					px = next
-					nx++
+					patIdx = next
+					nameIdx++
 					continue
 				}
-				if !ok && name[nx] == '[' { // unterminated class: literal "["
-					px++
-					nx++
+				if !ok && name[nameIdx] == '[' { // unterminated class: literal "["
+					patIdx++
+					nameIdx++
 					continue
 				}
 			case '\\':
-				if px+1 < len(pat) {
-					if pat[px+1] == name[nx] {
-						px += 2
-						nx++
+				if patIdx+1 < len(pat) {
+					if pat[patIdx+1] == name[nameIdx] {
+						patIdx += 2
+						nameIdx++
 						continue
 					}
-				} else if name[nx] == '\\' { // trailing backslash: literal
-					px++
-					nx++
+				} else if name[nameIdx] == '\\' { // trailing backslash: literal
+					patIdx++
+					nameIdx++
 					continue
 				}
 			default:
-				if c == name[nx] {
-					px++
-					nx++
+				if c == name[nameIdx] {
+					patIdx++
+					nameIdx++
 					continue
 				}
 			}
 		}
 		// Mismatch: backtrack to the last "*", letting it eat one more byte.
-		if starPx < 0 {
+		if starPat < 0 {
 			return false
 		}
-		starNx++
-		px, nx = starPx+1, starNx
+		starName++
+		patIdx, nameIdx = starPat+1, starName
 	}
-	for px < len(pat) && pat[px] == '*' {
-		px++
+	for patIdx < len(pat) && pat[patIdx] == '*' {
+		patIdx++
 	}
-	return px == len(pat)
+	return patIdx == len(pat)
 }
 
 // matchClass matches c against the "[...]" class starting at pat[start].

@@ -23,6 +23,13 @@ type Overrides struct {
 	ShowHidden *bool
 }
 
+// Well-known file and directory names.
+const (
+	projectDirName = ".ttanic"     // the project marker directory
+	configFileName = "config.toml" // per-scope config, global and project
+	ignoreFileName = "ignore"      // gitignore-syntax ignore patterns
+)
+
 // GlobalDir returns the global ttanic config directory:
 // $XDG_CONFIG_HOME/ttanic when the variable is set, otherwise
 // ~/.config/ttanic — on macOS too (deliberately not os.UserConfigDir).
@@ -49,11 +56,11 @@ func Load(projectDir string, ov Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if err := applyFile(&cfg, filepath.Join(globalDir, "config.toml")); err != nil {
+	if err := applyFile(&cfg, filepath.Join(globalDir, configFileName)); err != nil {
 		return Config{}, err
 	}
 	if projectDir != "" {
-		if err := applyFile(&cfg, filepath.Join(projectDir, ".ttanic", "config.toml")); err != nil {
+		if err := applyFile(&cfg, filepath.Join(projectDir, projectDirName, configFileName)); err != nil {
 			return Config{}, err
 		}
 	}
@@ -76,9 +83,9 @@ func LoadIgnore(projectDir string) (*Matcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	paths := []string{filepath.Join(globalDir, "ignore")}
+	paths := []string{filepath.Join(globalDir, ignoreFileName)}
 	if projectDir != "" {
-		paths = append(paths, filepath.Join(projectDir, ".ttanic", "ignore"))
+		paths = append(paths, filepath.Join(projectDir, projectDirName, ignoreFileName))
 	}
 	var layers [][]Rule
 	for _, p := range paths {
