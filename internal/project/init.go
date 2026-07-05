@@ -27,20 +27,60 @@ type InitAnswers struct {
 	Ignore    []string // initial .ttanic/ignore lines; nil/empty -> empty file
 }
 
+// Validate reports whether the set fields describe values config.Config
+// will accept, so a bad answer (e.g. a mistyped level) fails at Init time
+// rather than silently producing a config.toml that the next config.Load
+// rejects.
+func (a InitAnswers) Validate() error {
+	cfg := config.Default()
+	if a.Level != nil {
+		cfg.Compression.Level = *a.Level
+	}
+	if a.Workers != nil {
+		cfg.Compression.Workers = *a.Workers
+	}
+	if a.OnSymlink != nil {
+		cfg.Archive.OnSymlink = *a.OnSymlink
+	}
+	return cfg.Validate()
+}
+
 // Init creates dir's .ttanic directory, a config.toml seeded from answers
 // (unset keys commented out, showing the built-in default), and a .ttanic/
 // ignore file from answers.Ignore. Manifest creation is delegated to the
 // store (M1.11). It returns ErrAlreadyInitialized if dir is already a
-// project root.
+// project root; if dir/.ttanic exists but isn't a directory, or an answer
+// fails Validate, it returns a distinct, descriptive error instead. A
+// failure after the directory is created is rolled back (the directory is
+// removed) so a retry isn't permanently blocked by a half-written project.
 func Init(dir string, answers InitAnswers) error {
+	if err := answers.Validate(); err != nil {
+		return fmt.Errorf("invalid init answers: %w", err)
+	}
+
 	projectDir := filepath.Join(dir, config.ProjectDirName)
 	if err := os.Mkdir(projectDir, 0o755); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("%w: %s", ErrAlreadyInitialized, projectDir)
+			ok, statErr := IsProjectRoot(dir)
+			if statErr != nil {
+				return fmt.Errorf("checking %s: %w", projectDir, statErr)
+			}
+			if ok {
+				return fmt.Errorf("%w: %s", ErrAlreadyInitialized, projectDir)
+			}
+			return fmt.Errorf("creating %s: exists and is not a directory", projectDir)
 		}
 		return fmt.Errorf("creating %s: %w", projectDir, err)
 	}
 
+	if err := writeProjectFiles(projectDir, answers); err != nil {
+		_ = os.RemoveAll(projectDir)
+		return err
+	}
+	return nil
+}
+
+func writeProjectFiles(projectDir string, answers InitAnswers) error {
 	configPath := filepath.Join(projectDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, []byte(renderConfigToml(answers)), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", configPath, err)

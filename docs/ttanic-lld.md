@@ -242,7 +242,7 @@ Fix operations: `forget` (drop manifest row), `adopt` (List + hash an untracked 
 ## `internal/project`
 
 - **Discovery**: walk up from CWD looking for `.ttanic/`. Nearest ancestor wins. Inside a project, walks (scan, recursive compress, tree) that encounter *another* `.ttanic/` deeper down treat that subtree as a foreign project: skip it and warn (resolved open question).
-- **Init**: creates `.ttanic/config.toml` (commented defaults) and the manifest. The TUI wizard (`huh`) asks: compression level, ignore patterns, confirm defaults; `ttanic init` takes the same as flags with sane defaults.
+- **Init**: creates `.ttanic/config.toml` (commented defaults) and an empty `.ttanic/ignore`; the manifest is created separately, at store-open time (M1.11), not by `project.Init`. The TUI wizard (`huh`) asks: compression level, ignore patterns, confirm defaults; `ttanic init` takes the same as flags with sane defaults.
 - **Locking**: `.ttanic/lock` acquired with `flock` (LOCK_EX|LOCK_NB) for the process lifetime; contains PID for diagnostics. Two concurrent ttanic instances on one project would race verify-then-delete; the second instance fails fast with a clear message. Read-only commands (`ls`, `search`) skip the lock.
 - **Crash safety**: this is why it's `flock` and not a lock*file whose existence is the lock*. The lock lives on the open file descriptor, so the kernel releases it the instant the process dies -- crash, SIGKILL, panic, anything. A leftover `.ttanic/lock` file after a crash is inert; the next instance simply flocks it again. No stale-lock detection or cleanup logic exists because none is needed.
 

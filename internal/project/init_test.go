@@ -22,6 +22,8 @@ func TestInitIdempotent(t *testing.T) {
 }
 
 func TestInitDefaultsRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate from any real global config.toml
+
 	dir := t.TempDir()
 	if err := Init(dir, InitAnswers{}); err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -45,6 +47,8 @@ func TestInitDefaultsRoundTrip(t *testing.T) {
 }
 
 func TestInitAppliesAnswers(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate from any real global config.toml
+
 	dir := t.TempDir()
 	level := config.LevelBest
 	workers := 4
@@ -104,5 +108,34 @@ func TestInitAlreadyInitializedNoOverwrite(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Errorf("config.toml changed after a failed re-Init")
+	}
+}
+
+func TestInitRejectsInvalidAnswers(t *testing.T) {
+	dir := t.TempDir()
+	badLevel := config.Level("turbo")
+	err := Init(dir, InitAnswers{Level: &badLevel})
+	if !errors.Is(err, config.ErrUnknownLevel) {
+		t.Fatalf("Init() error = %v, want errors.Is(..., ErrUnknownLevel)", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, config.ProjectDirName)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf(".ttanic was created despite invalid answers (stat error = %v)", statErr)
+	}
+}
+
+func TestInitStrayFileNotAlreadyInitialized(t *testing.T) {
+	dir := t.TempDir()
+	// A plain file named .ttanic (not a directory) is not a project root, so
+	// it shouldn't be mistaken for one.
+	if err := os.WriteFile(filepath.Join(dir, config.ProjectDirName), []byte("oops"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Init(dir, InitAnswers{})
+	if err == nil {
+		t.Fatal("Init() error = nil, want a non-nil error for a stray .ttanic file")
+	}
+	if errors.Is(err, ErrAlreadyInitialized) {
+		t.Errorf("Init() error = %v, want anything but ErrAlreadyInitialized for a non-directory .ttanic", err)
 	}
 }
