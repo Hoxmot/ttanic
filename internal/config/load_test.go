@@ -52,23 +52,44 @@ func TestLoad(t *testing.T) {
 			name: "no files, defaults",
 		},
 		{
-			name:   "global only",
-			global: "[compression]\nlevel = \"best\"\nworkers = 4\n",
+			name: "global only",
+			global: `
+				[compression]
+				level = "best"
+				workers = 4
+			`,
 			want: func(c *Config) {
 				c.Compression.Level = LevelBest
 				c.Compression.Workers = 4
 			},
 		},
 		{
-			name:    "project overrides global",
-			global:  "[compression]\nlevel = \"best\"\n",
-			project: "[compression]\nlevel = \"fastest\"\n",
-			want:    func(c *Config) { c.Compression.Level = LevelFastest },
+			name: "project overrides global",
+			global: `
+				[compression]
+				level = "best"
+			`,
+			project: `
+				[compression]
+				level = "fastest"
+			`,
+			want: func(c *Config) { c.Compression.Level = LevelFastest },
 		},
 		{
-			name:    "project sets only level, UI prefs and leader survive",
-			global:  "[ui]\ntheme = \"dark\"\nshow_hidden = true\nsort = \"size\"\n\n[keys]\nleader = \",\"\n",
-			project: "[compression]\nlevel = \"better\"\n",
+			name: "project sets only level, UI prefs and leader survive",
+			global: `
+				[ui]
+				theme = "dark"
+				show_hidden = true
+				sort = "size"
+
+				[keys]
+				leader = ","
+			`,
+			project: `
+				[compression]
+				level = "better"
+			`,
 			want: func(c *Config) {
 				c.Compression.Level = LevelBetter
 				c.UI.Theme = "dark"
@@ -78,22 +99,49 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name:    "defined zero values still override",
-			global:  "[compression]\nworkers = 4\n\n[ui]\nshow_hidden = true\n",
-			project: "[compression]\nworkers = 0\n\n[ui]\nshow_hidden = false\n",
-			want:    func(_ *Config) {}, // back to the default zero values, explicitly
+			name: "defined zero values still override",
+			global: `
+				[compression]
+				workers = 4
+
+				[ui]
+				show_hidden = true
+			`,
+			project: `
+				[compression]
+				workers = 0
+
+				[ui]
+				show_hidden = false
+			`,
+			want: func(_ *Config) {}, // back to the default zero values, explicitly
 		},
 		{
-			name:       "standalone mode ignores project file",
-			global:     "[compression]\nlevel = \"best\"\n",
-			project:    "[compression]\nlevel = \"fastest\"\n",
+			name: "standalone mode ignores project file",
+			global: `
+				[compression]
+				level = "best"
+			`,
+			project: `
+				[compression]
+				level = "fastest"
+			`,
 			standalone: true,
 			want:       func(c *Config) { c.Compression.Level = LevelBest },
 		},
 		{
-			name:    "overrides beat both files",
-			global:  "[compression]\nlevel = \"best\"\n",
-			project: "[compression]\nlevel = \"fastest\"\n\n[ui]\nshow_hidden = true\n",
+			name: "overrides beat both files",
+			global: `
+				[compression]
+				level = "best"
+			`,
+			project: `
+				[compression]
+				level = "fastest"
+
+				[ui]
+				show_hidden = true
+			`,
 			ov: Overrides{
 				Level:      ptr(LevelBetter),
 				Workers:    ptr(8),
@@ -110,8 +158,25 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name:   "every key merges from file",
-			global: "[compression]\nlevel = \"fastest\"\nworkers = 2\n\n[archive]\non_symlink = \"skip\"\n\n[ui]\ntheme = \"dark\"\nshow_hidden = true\nsort = \"mtime\"\neditor = \"hx\"\nicons = \"ascii\"\n\n[keys]\nleader = \",\"\n",
+			name: "every key merges from file",
+			global: `
+				[compression]
+				level = "fastest"
+				workers = 2
+
+				[archive]
+				on_symlink = "skip"
+
+				[ui]
+				theme = "dark"
+				show_hidden = true
+				sort = "mtime"
+				editor = "hx"
+				icons = "ascii"
+
+				[keys]
+				leader = ","
+			`,
 			want: func(c *Config) {
 				c.Compression.Level = LevelFastest
 				c.Compression.Workers = 2
@@ -125,13 +190,19 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name:    "bad level in file",
-			project: "[compression]\nlevel = \"turbo\"\n",
+			name: "bad level in file",
+			project: `
+				[compression]
+				level = "turbo"
+			`,
 			wantErr: ErrUnknownLevel,
 		},
 		{
-			name:    "negative workers in file",
-			project: "[compression]\nworkers = -1\n",
+			name: "negative workers in file",
+			project: `
+				[compression]
+				workers = -1
+			`,
 			wantErr: ErrInvalidWorkers,
 		},
 		{
@@ -140,13 +211,19 @@ func TestLoad(t *testing.T) {
 			wantErr: ErrUnknownLevel,
 		},
 		{
-			name:        "unknown key errors with the key name",
-			project:     "[compression]\nworker = 4\n",
+			name: "unknown key errors with the key name",
+			project: `
+				[compression]
+				worker = 4
+			`,
 			wantErrText: "worker",
 		},
 		{
-			name:        "malformed TOML errors with the file path",
-			project:     "[compression\nlevel = \"best\"\n",
+			name: "malformed TOML errors with the file path",
+			project: `
+				[compression
+				level = "best"
+			`,
 			wantErrText: "config.toml",
 		},
 	}
