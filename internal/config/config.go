@@ -46,9 +46,10 @@ const (
 )
 
 // Config is the resolved ttanic configuration. It mirrors the TOML schema in
-// docs/ttanic-lld.md ("internal/config"). A new field or enum value here
-// should also update internal/project's renderConfigToml (init.go), which
-// hand-renders each key as a commented-default config.toml line.
+// docs/ttanic-lld.md ("internal/config"). The generated project config.toml
+// deliberately carries no schema -- key discovery is "ttanic config"'s job
+// (M3.13) -- so a new field or enum value here needs no other change unless
+// it also becomes wizard-settable (internal/project's InitAnswers).
 type Config struct {
 	Compression Compression `toml:"compression"`
 	Archive     Archive     `toml:"archive"`

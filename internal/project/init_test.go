@@ -37,6 +37,16 @@ func TestInitDefaultsRoundTrip(t *testing.T) {
 		t.Errorf("config.Load() = %+v, want config.Default() = %+v", cfg, config.Default())
 	}
 
+	raw, err := os.ReadFile(filepath.Join(dir, config.ProjectDirName, config.ConfigFileName))
+	if err != nil {
+		t.Fatalf("reading config.toml: %v", err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if line != "" && !strings.HasPrefix(line, "#") {
+			t.Errorf("config.toml line %q, want only the comment header when no answers are set", line)
+		}
+	}
+
 	data, err := os.ReadFile(filepath.Join(dir, config.ProjectDirName, config.IgnoreFileName))
 	if err != nil {
 		t.Fatalf("reading ignore file: %v", err)
@@ -75,6 +85,23 @@ func TestInitAppliesAnswers(t *testing.T) {
 	}
 	if cfg.Archive.OnSymlink != onSymlink {
 		t.Errorf("Archive.OnSymlink = %q, want %q", cfg.Archive.OnSymlink, onSymlink)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, config.ProjectDirName, config.ConfigFileName))
+	if err != nil {
+		t.Fatalf("reading config.toml: %v", err)
+	}
+	content := string(raw)
+	for _, active := range []string{`level = "best"`, "workers = 4", `on_symlink = "skip"`} {
+		if !strings.Contains(content, active+"\n") {
+			t.Errorf("config.toml missing active line %q:\n%s", active, content)
+		}
+	}
+	// Unset keys must not appear at all -- not even commented.
+	for _, unset := range []string{"theme", "show_hidden", "sort", "editor", "icons", "leader"} {
+		if strings.Contains(content, unset) {
+			t.Errorf("config.toml mentions unset key %q:\n%s", unset, content)
+		}
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, config.ProjectDirName, config.IgnoreFileName))
