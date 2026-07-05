@@ -65,6 +65,35 @@ func Load(projectDir string, ov Overrides) (Config, error) {
 	return cfg, nil
 }
 
+// LoadIgnore resolves the layered ignore rules: the global ignore file
+// (GlobalDir()/ignore), then <projectDir>/.ttanic/ignore. Project rules are
+// appended after global ones, so a project "!" pattern can re-include what
+// the global file ignores. projectDir == "" means standalone mode (no project
+// layer). Missing files are fine; with no ignore file at all the returned
+// matcher matches nothing.
+func LoadIgnore(projectDir string) (*Matcher, error) {
+	globalDir, err := GlobalDir()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{filepath.Join(globalDir, "ignore")}
+	if projectDir != "" {
+		paths = append(paths, filepath.Join(projectDir, ".ttanic", "ignore"))
+	}
+	var layers [][]Rule
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		layers = append(layers, ParseIgnore(string(data)))
+	}
+	return NewMatcher(layers...), nil
+}
+
 // applyFile merges the keys defined in the TOML file at path into cfg. A
 // missing file is a no-op.
 func applyFile(cfg *Config, path string) error {
